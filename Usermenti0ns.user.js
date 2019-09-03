@@ -1,14 +1,13 @@
 // ==UserScript==
 // @name         usermenti0ns
 // @namespace    pr0
-// @version      0.1
+// @version      1.0.1
 // @author       5yn74x
 // @match        https://pr0gramm.com/*
 // @grant        none
 // @require      https://code.jquery.com/ui/1.11.4/jquery-ui.min.js
 // ==/UserScript==
 var css = `
-/* User mentions autocomplete */
 .ui-autocompletem {
 position: relative;
 display: inline-block;
@@ -34,7 +33,7 @@ background: #161618;
 }
 
 .ui-state-focus {
-background-color: #ee4d2e !important;
+background-color: var(--theme-main-color) !important;
 color: #ffffff;
 }
 
@@ -52,50 +51,33 @@ background: #4444;
 }
 `;
 
-function itemsGet(data) {
-    let users = JSON.parse(localStorage.getItem("users")) || {};
-    let response = JSON.parse(data);
-    response.items.forEach(item => {
-        users[item.user] = {mark: item.mark, username: item.user};
-    });
-    localStorage.setItem("users", JSON.stringify(users));
-}
+function getUserSuggestions(prefix) {
+    return new Promise((resolve, reject) => {
+        let xhr = new XMLHttpRequest();
+        xhr.withCredentials = true;
 
-function profileInfo(data) {
-    let users = JSON.parse(localStorage.getItem("users")) || {};
-    let response = JSON.parse(data);
-    users[response.user.name] = {mark: response.user.mark, username: response.user.name}
-    localStorage.setItem("users", JSON.stringify(users));
-}
+        xhr.addEventListener("readystatechange", function () {
+            if (this.readyState === 4) {
+                if (this.status === 200) {
+                    resolve(JSON.parse(this.responseText));
+                } else {
+                    reject(this);
+                }
+            }
+        });
 
-function itemsInfo(data) {
-    let users = JSON.parse(localStorage.getItem("users")) || {};
-    let response = JSON.parse(data);
-    response.comments.forEach(comment => {
-        users[comment.name] = {mark: comment.mark, username: comment.name};
+        xhr.open("GET", `https://pr0gramm.com/api/profile/suggest?prefix=${prefix}`);
+        xhr.setRequestHeader("Accept", "application/json");
+        xhr.send();
     });
-    localStorage.setItem("users", JSON.stringify(users));
-}
-
-function inboxConversations(data) {
-    let users = JSON.parse(localStorage.getItem("users")) || {};
-    let response = JSON.parse(data);
-    response.conversations.forEach(conversation => {
-        users[conversation.name] = {mark: conversation.mark, username: conversation.name};
-    });
-    localStorage.setItem("users", JSON.stringify(users));
 }
 
 function initAutocomplete() {
-    var availableUsers = Object.values(JSON.parse(localStorage.getItem("users"))).map(({username}) => username);
-
     $.widget( "custom.superAutocomplete", $.ui.autocomplete, {
         _renderItem: function( ul, item ) {
-            let user = JSON.parse(localStorage.getItem("users"));
-            let mark = (user[item.label] === undefined)? "0" : user[item.label].mark;
             return $( "<li>" )
                 .attr( "data-value", item.value )
-                .append(`<span class='user um${mark}'>${item.label}</span>`)
+                .append(`<span>${item.label}</span>`)
                 .appendTo( ul );
         }
     });
@@ -108,18 +90,13 @@ function initAutocomplete() {
     }).superAutocomplete({
         minLength: 0,
         source: function(request, response) {
-            var term = request.term,
-                results = [];
+            var term = request.term;
             if (term.indexOf("@") >= 0) {
                 term = request.term.substring(request.term.lastIndexOf("@")).replace("@", "");
-                if (term.length > 0) {
-                    results = $.ui.autocomplete.filter(
-                        availableUsers, term);
-                } else {
-                    results = ['NUTZERNAME'];
-                }
+                getUserSuggestions(term).then(res => {
+                    response(res.users);
+                }).catch(console.error);
             }
-            response(results);
         },
         focus: function(event, ui) {
             return false;
@@ -133,36 +110,11 @@ function initAutocomplete() {
 }
 
 (function() {
-    var catchXHR = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function() {
-        this.addEventListener('load', function() {
-            if (this.responseURL.search(/items\/get/gm) !== -1) {
-                itemsGet(this.response);
-            }
-
-            if (this.responseURL.search(/profile\/info/gm) !== -1) {
-                profileInfo(this.response);
-            }
-
-            if (this.responseURL.search(/items\/info/gm) !== -1) {
-                itemsInfo(this.response);
-            }
-
-            if (this.responseURL.search(/inbox\/conversations/gm) !== -1) {
-                inboxConversations(this.response);
-            }
-
-        });
-        catchXHR.apply(this, arguments);
-    };
-
     document.querySelector('body').addEventListener('click', function(event) {
         if (event.target.tagName.toLowerCase() === 'textarea') {
             initAutocomplete();
         }
     });
-
-
 
     document.querySelector('body').addEventListener('keyup', function(event) {
         if (event.target.tagName.toLowerCase() === 'textarea') {
@@ -177,9 +129,4 @@ function initAutocomplete() {
     style.type = 'text/css';
     style.innerHTML = css;
     head.appendChild(style);
-
 })();
-
-
-
-
